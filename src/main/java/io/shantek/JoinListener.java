@@ -65,7 +65,9 @@ public class JoinListener implements Listener {
     public void onPlayerQuit(PlayerQuitEvent event) {
         Player player = event.getPlayer();
         // Save player settings to file when they quit
-        playerSave(player);
+
+        Bukkit.getAsyncScheduler().runNow(plugin, task -> playerSave(player));
+
         // Remove player settings from memory
         plugin.removePlayerSettings(player);
     }

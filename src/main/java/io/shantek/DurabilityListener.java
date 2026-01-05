@@ -1,6 +1,5 @@
 package io.shantek;
 
-import org.apache.commons.lang.WordUtils;
 import org.bukkit.ChatColor;
 import org.bukkit.Sound;
 import org.bukkit.entity.Player;
@@ -104,9 +103,15 @@ public class DurabilityListener implements Listener {
     private String getFormattedItemName(String type, ItemStack item) {
         String[] parts = item.getType().toString().split("_");
         if (parts.length > 1) {
-            return WordUtils.capitalize(parts[1].toLowerCase());
+            return capitalize(parts[1]);
         }
-        return WordUtils.capitalize(type.toLowerCase());
+        return capitalize(type);
+    }
+
+    private String capitalize(String input) {
+        if (input == null || input.isEmpty()) return input;
+        String lower = input.toLowerCase();
+        return Character.toUpperCase(lower.charAt(0)) + lower.substring(1);
     }
 
     private void sendWarning(Player player, String item, int durability, boolean soundEnabled) {
