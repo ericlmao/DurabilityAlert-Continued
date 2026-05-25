@@ -1,3 +1,7 @@
+> This repository is a hard-fork of the original Durability-Reloaded project.
+
+> Builds of the plugin can be found [here](https://ci.moonrise.gg/job/Durability-Reloaded/).
+
 # ![Shantek Banner](/.github/assets/Banner.png)
 
 ---
@@ -13,8 +17,6 @@
 
 **A lightweight alert system for item durability in Minecraft.**  
 Receive notifications when your armor or tools are low on durability. Configurable on a per-player basis, with full control over thresholds and sound cues.
-
-> 🔧 [Get the latest dev builds here →](https://www.github.com/shantek/DurabilityAlert-Continued/releases)
 
 ---
 
@@ -86,3 +88,5 @@ See [`LICENSE`](LICENSE) for full terms.
 --- 
 
 ![Plugin Stats](https://bstats.org/signatures/bukkit/Durability%20Alert%20Continued.svg)
+
+Original repository: [shantek/DurabilityAlert-Continued](https://github.com/shantek/DurabilityAlert-Continued)
