@@ -2,10 +2,16 @@
 shadow = "9.3.0"
 paperPluginYml = "0.6.0"
 paper = "1.21.8-R0.1-SNAPSHOT"
+hikari = "7.0.2"
+sqlite = "3.50.3.0"
+caffeine = "3.2.3"
 
 [libraries]
 paper = { module = "io.papermc.paper:paper-api", version.ref = "paper" }
+hikari = { module = "com.zaxxer:HikariCP", version.ref = "hikari" }
+sqlite = { module = "org.xerial:sqlite-jdbc", version.ref = "sqlite" }
+caffeine = { module = "com.github.ben-manes.caffeine:caffeine", version.ref = "caffeine" }
 
 [plugins]
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
-bukkitPluginYml = { id = "net.minecrell.plugin-yml.bukkit", version.ref = "paperPluginYml" }
+paperPluginYml = { id = "net.minecrell.plugin-yml.paper", version.ref = "paperPluginYml" }

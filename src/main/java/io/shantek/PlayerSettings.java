@@ -30,6 +30,10 @@ public class PlayerSettings {
         this.soundEnabled = soundEnabled;
     }
 
+    public PlayerSettings copy() {
+        return new PlayerSettings(warningsEnabled, armorThreshold, toolsThreshold, alertType, enchantedItemsOnly, soundEnabled);
+    }
+
     // Getters and setters
     public boolean isWarningsEnabled() {
         return warningsEnabled;

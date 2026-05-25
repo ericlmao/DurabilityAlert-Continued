@@ -1,10 +1,11 @@
 import net.minecrell.pluginyml.bukkit.BukkitPluginDescription
+import net.minecrell.pluginyml.paper.PaperPluginDescription
 import org.gradle.kotlin.dsl.configure
 
 plugins {
     id("java")
     alias(libs.plugins.shadow)
-    alias(libs.plugins.bukkitPluginYml)
+    alias(libs.plugins.paperPluginYml)
 }
 
 group = "io.shantek"
@@ -15,6 +16,9 @@ val location = "io.shantek"
 
 dependencies {
     compileOnly(libs.paper)
+    compileOnly(libs.hikari)
+    compileOnly(libs.sqlite)
+    compileOnly(libs.caffeine)
 }
 
 tasks {
@@ -40,19 +44,12 @@ tasks.shadowJar {
     archiveVersion.set(project.version.toString())
 }
 
-configure<BukkitPluginDescription> {
+configure<PaperPluginDescription> {
     name = identifier
-    apiVersion = "1.13"
+    apiVersion = "1.21"
     version = project.version.toString()
     main = "$location.DurabilityAlertContinued"
-
-    commands.register("durabilityalert") {
-        usage = "/<command>"
-        aliases = listOf("da")
-        description = "the base durabilityalert command"
-        permission = "shantek.durabilityalert.use"
-        permissionMessage = "You do not have permission!"
-    }
+    loader = "$location.loader.DurabilityAlertPluginLoader"
 
     permissions.register("shantek.durabilityalert.use") {
         description = "allows the user to get durability alerts"
