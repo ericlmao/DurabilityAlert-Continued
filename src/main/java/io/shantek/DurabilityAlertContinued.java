@@ -1,12 +1,21 @@
 package io.shantek;
 
+import com.github.benmanes.caffeine.cache.Cache;
+import com.github.benmanes.caffeine.cache.Caffeine;
+import org.bukkit.Bukkit;
+import org.bukkit.command.Command;
+import org.bukkit.command.CommandSender;
 import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
-import java.util.HashMap;
-import java.util.Map;
-import java.util.Objects;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
+import java.util.logging.Level;
 
 public final class DurabilityAlertContinued extends JavaPlugin {
 
@@ -22,12 +31,16 @@ public final class DurabilityAlertContinued extends JavaPlugin {
     // Prefix used in messages
     public static String prefix = "&f&l[&9&lDurabilityAlert&f&l] ";
 
-    // Map to store player settings
-    private final Map<UUID, PlayerSettings> playerData = new HashMap<>();
+    // Cache to store player settings
+    private final Cache<UUID, PlayerSettings> playerData = Caffeine.newBuilder()
+            .maximumSize(10_000)
+            .build();
+    private final Set<UUID> dirtyPlayerData = ConcurrentHashMap.newKeySet();
 
     // Listeners
     JoinListener joinListener;
     ConfigHandler configHandler;
+    private PlayerSettingsRepository playerSettingsRepository;
 
     @Override
     public void onEnable() {
@@ -42,6 +55,15 @@ public final class DurabilityAlertContinued extends JavaPlugin {
         defaultEnchanted = getConfig().getBoolean("defaultenchanted", false);
         displayTime = getConfig().getInt("displaytime", 10); // Set default if not in config
 
+        playerSettingsRepository = new PlayerSettingsRepository(this);
+        try {
+            playerSettingsRepository.init();
+        } catch (IllegalStateException exception) {
+            getLogger().log(Level.SEVERE, "Failed to initialize player settings storage.", exception);
+            getServer().getPluginManager().disablePlugin(this);
+            return;
+        }
+
         // Initialize listeners and config handler
         joinListener = new JoinListener(this);
         configHandler = new ConfigHandler(this);
@@ -51,11 +73,7 @@ public final class DurabilityAlertContinued extends JavaPlugin {
         // Register the DurabilityListener
         getServer().getPluginManager().registerEvents(new DurabilityListener(this), this);
 
-        // Register the tab completer
-        Objects.requireNonNull(this.getCommand("durabilityalert")).setTabCompleter(new DurabilityTabCompleter());
-
-        // Register commands
-        Objects.requireNonNull(this.getCommand("durabilityalert")).setExecutor(new CommandHandler());
+        registerDurabilityAlertCommand();
 
         // Perform any additional setup when the server starts
         joinListener.onServerStart();
@@ -63,8 +81,15 @@ public final class DurabilityAlertContinued extends JavaPlugin {
 
     @Override
     public void onDisable() {
-        // Perform any cleanup tasks when the server stops
-        joinListener.onServerStop();
+        if (joinListener != null) {
+            joinListener.onServerStop();
+        }
+
+        if (playerSettingsRepository != null) {
+            playerSettingsRepository.close();
+        }
+        playerData.invalidateAll();
+        playerData.cleanUp();
     }
 
     public static DurabilityAlertContinued getInstance() {
@@ -73,23 +98,97 @@ public final class DurabilityAlertContinued extends JavaPlugin {
 
     // Method to retrieve player settings or create default settings if not present
     public PlayerSettings getPlayerSettings(Player player) {
-        return playerData.computeIfAbsent(player.getUniqueId(), uuid -> new PlayerSettings());
+        return playerData.get(player.getUniqueId(), uuid -> new PlayerSettings());
     }
 
     // Method to store player settings
     public void setPlayerData(Player player, PlayerSettings settings) {
-        playerData.put(player.getUniqueId(), settings);
+        setPlayerData(player.getUniqueId(), settings);
+    }
+
+    public void setPlayerData(UUID playerId, PlayerSettings settings) {
+        playerData.put(playerId, settings);
     }
 
     // Method to remove player settings from the playerData map when they quit
     public void removePlayerSettings(Player player) {
-        playerData.remove(player.getUniqueId());
+        UUID playerId = player.getUniqueId();
+        playerData.invalidate(playerId);
+        dirtyPlayerData.remove(playerId);
+    }
+
+    public boolean isPlayerOnline(UUID playerId) {
+        Player player = Bukkit.getPlayer(playerId);
+        return player != null && player.isOnline();
+    }
+
+    public void loadPlayerSettings(Player player) {
+        UUID playerId = player.getUniqueId();
+        playerSettingsRepository.loadAsync(playerId).thenAccept(optionalSettings ->
+                Bukkit.getGlobalRegionScheduler().run(this, task -> {
+                    Player onlinePlayer = Bukkit.getPlayer(playerId);
+                    if (onlinePlayer != null && onlinePlayer.isOnline() && !dirtyPlayerData.contains(playerId)) {
+                        setPlayerData(playerId, optionalSettings.orElseGet(PlayerSettings::new));
+                    }
+                })
+        ).exceptionally(exception -> {
+            getLogger().log(Level.SEVERE, "Failed to load player settings for " + playerId + ".", exception);
+            return null;
+        });
+    }
+
+    public CompletableFuture<Void> savePlayerSettings(Player player) {
+        return savePlayerSettings(player.getUniqueId(), getPlayerSettings(player));
+    }
+
+    public CompletableFuture<Void> savePlayerSettings(UUID playerId, PlayerSettings settings) {
+        return playerSettingsRepository.saveAsync(playerId, settings);
+    }
+
+    public void saveOnlinePlayerSettings() {
+        List<CompletableFuture<Void>> saves = new ArrayList<>();
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            saves.add(savePlayerSettings(player));
+        }
+
+        CompletableFuture<Void> combined = CompletableFuture.allOf(saves.toArray(CompletableFuture[]::new));
+        try {
+            combined.get(5, TimeUnit.SECONDS);
+        } catch (Exception exception) {
+            getLogger().log(Level.WARNING, "Timed out while saving player settings during shutdown.", exception);
+        }
+    }
+
+    private void registerDurabilityAlertCommand() {
+        CommandHandler commandHandler = new CommandHandler();
+        DurabilityTabCompleter tabCompleter = new DurabilityTabCompleter();
+        Command command = new Command(
+                "durabilityalert",
+                "the base durabilityalert command",
+                "/<command>",
+                List.of("da")
+        ) {
+            @Override
+            public boolean execute(CommandSender sender, String commandLabel, String[] args) {
+                return commandHandler.onCommand(sender, this, commandLabel, args);
+            }
+
+            @Override
+            public List<String> tabComplete(CommandSender sender, String alias, String[] args) {
+                List<String> completions = tabCompleter.onTabComplete(sender, this, alias, args);
+                return completions == null ? List.of() : completions;
+            }
+        };
+        command.setPermission("shantek.durabilityalert.use");
+        command.setPermissionMessage("You do not have permission!");
+        getServer().getCommandMap().register("durabilityalert", command);
     }
 
     // Method to set the alert type for a player (e.g., percent or durability)
     public void setPlayerAlertType(Player player, PlayerSettings.AlertType alertType) {
         PlayerSettings settings = getPlayerSettings(player);
         settings.setAlertType(alertType);
+        markPlayerSettingsDirty(player);
         setPlayerData(player, settings);
     }
 
@@ -97,6 +196,7 @@ public final class DurabilityAlertContinued extends JavaPlugin {
     public void setPlayerArmorThreshold(Player player, int threshold) {
         PlayerSettings settings = getPlayerSettings(player);
         settings.setArmorThreshold(threshold);
+        markPlayerSettingsDirty(player);
         setPlayerData(player, settings);
     }
 
@@ -104,6 +204,7 @@ public final class DurabilityAlertContinued extends JavaPlugin {
     public void setPlayerToolsThreshold(Player player, int threshold) {
         PlayerSettings settings = getPlayerSettings(player);
         settings.setToolsThreshold(threshold);
+        markPlayerSettingsDirty(player);
         setPlayerData(player, settings);
     }
 
@@ -123,7 +224,12 @@ public final class DurabilityAlertContinued extends JavaPlugin {
                 break;
         }
 
+        markPlayerSettingsDirty(player);
         setPlayerData(player, settings);
+    }
+
+    private void markPlayerSettingsDirty(Player player) {
+        dirtyPlayerData.add(player.getUniqueId());
     }
 
     // Enum to represent different toggleable settings
