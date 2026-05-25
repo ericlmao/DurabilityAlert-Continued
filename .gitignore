@@ -1,3 +1,4 @@
 .idea/
-DurabilityAlert.iml
-/target/
+*.iml
+.gradle/
+build/
